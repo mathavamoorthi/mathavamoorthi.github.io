@@ -20,5 +20,5 @@ Note: Github Pages only supports static files.
 
 
 ## Deploy on Vercel
-Vercel supports Next.js out of the box, so we can use node.js runtime to deploy this blog.
+Vercel supports Next.js out of the box, so we can use node.js runtime to deploy th
 
