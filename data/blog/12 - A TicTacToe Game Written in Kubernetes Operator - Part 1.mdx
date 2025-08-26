@@ -1,0 +1,88 @@
+---
+title: A TicTacToe Game Written in Kubernetes Operator - Part 1
+date: '2024-01-14'
+tags: ['kubernetes', 'operator', 'code for fun']
+draft: false
+summary: I am learning kubernetes, so I write a TicTacToe game based on Kubernetes Operator. This is a sample project to demonstrate how to build a Kubernetes Operator with Kubebuilder.
+---
+
+> 👋 If you find this article helpful, please consider giving a star ⭐️ to [KubeBlocks](https://github.com/apecloud/kubeblocks), an open-source project that helps you run any database on Kubernetes with ease. Your support keeps us motivated!
+
+I've been a light user of Kubernetes for about half a year now.I'm familiar with kubectl, the declarative APIs, and the architecture of Kubernetes.
+Whenever people talk about Kubernetes, they can't help but praise its declarative APIs and the Controller Loop.
+It's fascinating when you think about it: you submit a YAML file to Kubernetes, and it orchestrates the desired state effortlessly.
+This sparked my curiosity about the Controller Loop—how does it precisely work?
+To quench this thirst for knowledge, I decided to write a [TicTacToe game](https://github.com/earayu/kube-kic-tac-toe) based on Kubernetes Operator.
+
+
+## What is a Kubernetes Operator?
+> short answer: Kubernetes Operator ==  CRD + Controller
+
+![image.png](/assets/tictactoe/operator.png)
+Think about when you submit a Deployment YAML file to Kubernetes, it creates a Deployment object in the cluster.
+If some of the pods in the Deployment fail, Kubernetes will automatically restart them.
+This is because Kubernetes has a built-in controller for the Deployment object.
+
+See the pattern here? <br/>
+Deployment is an API, and Kubernetes has a built-in controller for it.
+
+Kubernetes allows us to define our own APIs (we call it CRD) and controllers, together they are called Kubernetes Operators.
+
+So our problem next is: <br/>
+* how to define our own APIs (CRD) ?
+* how to write our own controllers ?
+
+## How to Write a Kubernetes Operator in 2024?
+Extending Kubernetes with CRD and Controllers is messy and complicated. Because we need to write a lot of boilerplate code.
+Luckily, The year 2024 has brought us many tools to write a Kubernetes Operator. Among these, Kubebuilder is the most popular one.
+Kubebuilder can help us scaffold out the boilerplate code for our operator.
+
+### Creating a New API
+> make sure you have installed the kubebuilder CLI and set up your kubernetes cluster.
+
+To kick things off, we need to create a new project for our operator.
+```
+mkdir kube-kic-tac-toe
+cd kube-kic-tac-toe
+kubebuilder init --domain earayu.github.io --repo earayu.github.io/kube-kic-tac-toe
+```
+Then we can create a new API for our game. This is done using the Kubebuilder CLI.
+We define a new custom resource definition (CRD) for our game with the following commands:
+```
+# choose YES when asked to whether create a resource or controller
+kubebuilder create api --group earayu.github.io --version v1alpha1 --kind TicTacToe
+kubebuilder create api --group earayu.github.io --version v1alpha1 --kind Move
+```
+These commands scaffold out our new TicTacToe and Move kinds, setting up the foundation for us to define the rules and logic of our game.
+The TicTacToe kind could represent the game board, whereas Move could represent a player's move.
+
+After we define our CRD, kubebuilder will generate the code for us. And the project structure will look like this:
+![image.png](/assets/tictactoe/project.png)
+
+### Creating a New Controller
+Since we choose YES when asked to whether create a controller, kubebuilder will also generate a controller for us. You can see the generated code in the `internal/controller/` directory.
+As a operator developer, we only need to focus on the business logic of our controller.
+```go
+func (r *TicTacToeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+
+}
+
+func (r *MoveReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+
+}
+```
+
+## What does the controller do?
+![image.png](/assets/tictactoe/kubebuilder.png)
+A Controller is a long-running process that continuously monitors the CRD objects that it manages. Let's take TicTacToe and Move CRDs as an example.
+1. It calls the Kubernetes API server to list & watch all the TicTacToe and Move objects. Every time a new TicTacToe or Move object is created, updated, or deleted, the controller will be notified.
+2. It caches the TicTacToe and Move objects in memory.
+3. It calls the Reconcile function to reconcile the TicTacToe and Move objects.
+4. Reconile function will make sure the TicTacToe and Move objects are in the desired state. If not, it will make the necessary changes to the TicTacToe and Move objects.
+5. repeat step 1 to 4.
+
+The step 1 to 3 is done by the Kubebuilder framework. We only need to focus on the step 4.
+In our case, we only need to implement the Reconcile function for TicTacToeReconciler and MoveReconciler objects.
+
+In the next part, we will talk about our TicTacToe Game, and implement the Reconcile function for TicTacToeReconciler and MoveReconciler objects.
+

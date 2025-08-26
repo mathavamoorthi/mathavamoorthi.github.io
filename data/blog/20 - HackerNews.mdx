@@ -1,0 +1,151 @@
+---
+title: What We Learned from 5 HackerNews Front Page Hits - A Guide to Open Source Growth
+date: '2025-02-07'
+tags: ['OpenSource', 'HackerNews']
+draft: false
+summary:
+---
+
+Over the past year, my colleagues and I have posted five articles that reached the Hacker News front page. Each time one of our articles hit the HN front page, it generated a wave of traffic and attention for our open source project, which ultimately translated into GitHub stars and users. In this post, I’d like to share some of our Hacker News “growth hacking” experiences.
+
+> If you find this article helpful, feel free to check out our open source project:
+> [KubeBlocks: Run Any Database on Kubernetes](https://github.com/apecloud/kubeblocks)
+
+---
+
+## How Much Impact Does the HN Front Page Really Have?
+
+Let’s start with some tangible results:
+
+- HN (Hacker News) receives millions of monthly visits, primarily from developers, architects, and technical leaders.
+- A popular post can stay on the front page for 6–12 hours, and if it continues to get upvotes/comments, it can last up to 24 hours or even longer.
+- For our most recent front-page post, within just 12 hours, our GitHub repository gained over a hundred new stars, and our website traffic soared to several times its usual level.
+
+There’s a well-known example from CockroachDB. In a [blog post](https://www.cockroachlabs.com/blog/what-can-we-learn-from-our-github-stars/) on their official site, they mentioned that early attention for their project took off after appearing on the Hacker News front page twice, bringing in thousands of GitHub stars. You can see in the chart below that every media mention triggered a noticeable spike in their GitHub repo stars.
+
+For an open source project, HN is like the “Wall Street Journal” of the tech world. It comes with a massive “magnifying effect,” connecting you directly to developers, industry experts, and sometimes even investors.
+
+![CockroachDB Star Spikes](/assets/hackernews/crdb.png)
+
+---
+
+## Demystifying the Hacker News Ranking Algorithm
+
+### The Original Seemingly Simple Formula
+
+In its early days, Hacker News publicly shared a straightforward ranking formula:
+```
+Score = (P - 1) / (T + 2)^G
+```
+where:
+- **P** is the number of upvotes
+- **T** is the number of hours since submission
+- **G** is the gravity factor, which the official docs say is 1.8
+
+All posts are scored according to this formula, and their positions are determined accordingly.
+
+Later on, the algorithm was updated into a [more complex function](https://news.ycombinator.com/item?id=1781417):
+```lisp
+(= gravity* 1.8 timebase* 120 front-threshold* 1
+   nourl-factor* .4 lightweight-factor* .17 gag-factor* .1)
+
+(def frontpage-rank (s (o scorefn realscore) (o gravity gravity*))
+  (* (/ (let base (- (scorefn s) 1)
+          (if (> base 0) (expt base .8) base))
+        (expt (/ (+ (item-age s) timebase*) 60) gravity))
+     (if (no (in s!type 'story 'poll))  .8
+         (blank s!url)                  nourl-factor*
+         (mem 'bury s!keys)             .001
+                                        (* (contro-factor s)
+                                           (if (mem 'gag s!keys)
+                                                gag-factor*
+                                               (lightweight s)
+                                                lightweight-factor*
+                                               1)))))
+```
+
+Although still somewhat readable, this function is just part of the system. Based on various [reverse engineering analyses](https://sangaline.com/post/reverse-engineering-the-hacker-news-ranking-algorithm/) and our own observations, the actual ranking involves more complexity.
+
+#### Domain Scoring
+- Well-trusted domains like GitHub, arXiv, and university `.edu` sites often have higher initial weight.
+- Medium or personal blogs are in a “gray zone,” requiring more upvotes to rank.
+- Certain “SEO spam sites” may be blocked entirely.
+
+If you need to share an external link, pick a reputable domain—or post your original text on GitHub to get that credibility boost.
+
+#### Do Comments Hurt or Help Your Rank?
+
+If a post racks up lots of noisy or argumentative comments in a short time, it could be flagged as “controversial” and sink in the rankings. But if the comments are high-quality, with valuable technical discussion or shared resources (e.g., code snippets, academic references), it can actually extend a post’s time on the front page.
+
+#### The Myth of “Weighted Votes”
+
+Some believe “upvotes from high-karma users push posts up faster,” but according to the official [HN FAQ](https://news.ycombinator.com/newsfaq.html), a user’s karma doesn’t directly give their vote more weight. Still, community “big names” with high karma do attract attention, so if they post or comment, more people tend to see it. This effect is more social than algorithmic.
+
+---
+
+## From Cold Start to Growth: HN Front-Page Strategies
+
+### The First 30 Minutes: A Crucial Window
+
+The HN ranking algorithm heavily emphasizes upvote velocity in the early phase. Some reverse-engineering posts suggest that upvote speed in the **first 30 minutes** can influence as much as 35% of whether you reach the front page. Even a handful of upvotes in that window can catapult a submission upward.
+
+For instance, here’s a post with just three upvotes that still made it onto the front page:
+
+![HN Post Example](/assets/hackernews/github-actions.png)
+
+**Choosing the Right Time to Post**
+We usually post around 6–7 AM PST. By then, it’s 9–10 AM on the East Coast, and night-owl developers on the West Coast might still be online. This covers a broad swath of the North American developer community’s peak activity hours.
+
+### The “Show HN” Channel: A Human-Curated Boost
+
+Hacker News has a special section called **Show HN**, designed for showcasing your own projects or tools. I once posted “Show HN: I’ve built a MySQL Proxy that supports Online DDL.” At first, it gained no traction. Then, out of the blue, I received an email from an HN admin saying they would give it another push from the “second-chance pool.” Sure enough, the next day it appeared on the front page and racked up a ton of attention.
+
+![HN Email Notice](/assets/hackernews/hn-email.png)
+
+So if you have a project you’re proud of, definitely try “Show HN.” Sometimes, even if it doesn’t catch on initially, an official “second chance” can turn things around.
+
+### Managing the Comments: Don’t Let Good Content Get Derailed
+
+Once you’re on the front page, the comment section can get very lively. A few pointers:
+
+- **Maintain Technical Depth:** If people ask deeper questions, answer thoughtfully. Provide data, papers, or links to repos. This signals real substance and can encourage more upvotes and longer front-page visibility.
+- **Curb Redundant or Heated Threads:** HN’s algorithm detects flame wars or repeated “low-value” comments. If they pile up, your post might drop in rank. We usually prepare an FAQ in the post or in a top comment to preempt repeated questions.
+
+### Extending Exposure: “Natural Fermentation”
+
+In theory, the HN “gravity” factor (officially ~1.8) ensures older posts drop fast. But some research suggests actual gravity might be closer to 1.6, so high-quality posts don’t sink as quickly. Here’s the typical pattern we see:
+
+- **First 6 hours:** Peak traffic, about 50% of the total exposure.
+- **Next 12–24 hours:** If high-quality discussion continues—especially if notable contributors join—you might retain ~30% of your visibility.
+- **Comment-Driven “Second Wind”:** When new valuable comments appear, HN can briefly resurface the post on the second or third page, adding more traffic.
+
+### Multi-Platform Synergy: Amplifying the “Community Effect”
+
+Keep producing quality content and link it across multiple platforms. CockroachDB, for example, cross-posts to their official blog, GitHub Wiki, and community shares, linking them together. If one article takes off, it brings traffic to all related content.
+
+When you go viral on HN, don’t forget to update your company blog, personal blog, X (formerly Twitter), GitHub Wiki, etc., and link them back and forth. This has two advantages:
+1. **Readers who discover you on HN can quickly find more in-depth content**, boosting conversions.
+2. **You build a persistent content network**—even after HN buzz fades, other channels keep the momentum going.
+
+---
+
+## Avoiding Pitfalls: HN’s “Taboos”
+
+The Hacker News community has a very “pure” culture. Any “clickbait” or blatant promotional tactics are usually spotted and penalized. Keep these in mind:
+
+1. **Never Ask for Upvotes:** HN has zero tolerance for vote manipulation. If it detects suspicious upvoting from new accounts, it blocks them. You need people to find your post organically on HN and upvote from the HN page itself.
+2. **Beware of Clickbait:** Overblown titles like “the ultimate solution” or “the best ever” can be downvoted by users and suppressed by the system.
+3. **Don’t Mass-Delete Comments:** If you repeatedly remove comments you don’t like, the system may flag your post for “censorship.” It’s not worth it.
+4. **Limit Repetitive Domain Posts:** Submitting content from the same domain over and over might be labeled as spam by the algorithm.
+
+---
+
+## Conclusion
+
+At its core, Hacker News is a community of tech enthusiasts and geeks. If you’re genuinely building something substantial and can write articles that spark technical discussions, HN can help you reach a broader audience. Over the past year, we rode five posts to the front page, which gave our open source project, [KubeBlocks](https://github.com/apecloud/kubeblocks), a swift kickstart, along with direct feedback from developers in the trenches.
+
+That said, luck does play a role—timing, competing posts, and other variables all matter. But you can maximize your chances by publishing solid content, choosing the right time zone, paying attention to that critical first 30 minutes, and fostering a positive discussion in the comments. If things go well, you may get that “second boost” and even stay on the front page longer than expected.
+
+Finally, I’d like to invite you again to check out our open source project, [KubeBlocks](https://github.com/apecloud/kubeblocks). If it sparks your interest, feel free to give it a try, open an issue, or drop us a star. And I look forward to seeing your own creations thrive on HN!
+
+**Wishing everyone smooth sailing on HN and plenty of exciting discoveries in the open source world!**

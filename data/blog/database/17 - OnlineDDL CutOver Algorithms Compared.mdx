@@ -1,0 +1,86 @@
+---
+title: OnlineDDL CutOver Algorithms Compared
+date: '2024-03-10'
+tags: ['database', 'OnlineDDL']
+draft: false
+summary: This article explains and compares the CutOver algorithms of pt-osc, gh-ost, and Facebook's OnlineSchemaChange.
+---
+
+Online DDL typically can be divided into three key steps: copying of existing data, copying of incremental data, and CutOver.
+
+CutOver is usually the final step, which involves swapping the **target table** (also known as the shadow table) with the
+**source table** (also known as the main or original table), acting as the commit point of the Online DDL.
+
+There is some design space around CutOver, and different design trade-offs will reflect different behaviors to the application side.
+This article mainly discusses the specific implementations of CutOver by various Online DDL tools.
+
+## pt-online-schema-change
+
+The cutover process of pt-online-schema-change (pt-osc) is the simplest.
+Since pt-osc synchronizes dual writes within a transaction using triggers, **there is no time lag between the source table and the target table**.
+After the copying of existing data and the copying of incremental data are completed, a direct CutOver can be performed.
+
+```sql
+rename table source_table to tmp_table, target_table to source_table, source_table to target_table;
+```
+
+It can be categorized as an `atomic cutover`. The cutover process is transparent to users (except for some possible latency due to MDL locks).
+
+## facebook-OnlineSchemaChange
+> Code can be found [here](https://github.com/facebookincubator/OnlineSchemaChange/blob/7e661a002d714012b0a5b2311cba24127588e897/core/lib/payload/copy.py#L3181)
+
+Before discussing CutOver, let's provide some background:
+facebook-OnlineSchemaChange uses a delta table to track modifications made to the source table.
+The target table copies incremental data from the source table based on the information in the delta table.
+This means that **the target table will always be slightly behind the source table**.
+
+If the MySQL version is greater than 8.x, the process is as follows:<br />
+1. Lock all tables.
+2. Wait for the incremental data to synchronize, at which point the target table's data will be identical to the source table's.
+3. Perform a table name swap between the Source table and Target table using a single Rename statement.
+
+It can be categorized as an `atomic cutover`.
+
+However, prior to MySQL 8.0.13, executing Rename after Lock Table was not allowed, and it was not supported until [WL#9826](https://dev.mysql.com/worklog/task/?id=9826). As shown in the following figure:
+![](/assets/onlineddl_cutover/locktable.png)
+So the algorithm would degrade to:<br />
+1. Lock all tables.
+2. Wait for the incremental data to synchronize, at which point the target table's data will be identical to the source table's.
+3. Rename the source table to a temporary table name.
+4. (The DDL from the previous step will automatically release the MDL lock, so at this point, user SQL may execute but will return an error because it cannot find the table.)
+5. Rename the target table to the source table's name.
+
+This can be classified as a `puncture cutover`. This means that it involves two separate rename operations, during which the users may experience a noticeable interruption.
+
+## gh-ost
+If you are using a version of MySQL prior to 8.0.13 and want to achieve an `atomic cutover`, what can be done? gh-ost has managed to do this, but it is quite complex.
+
+To provide some background: gh-ost listens to the binlog of the source table, then performs incremental data synchronization to the target table based on the binlog, so the target is always slightly behind the source table.
+
+The CutOver process in gh-ost is as follows:
+1. Prepare to start the cutover process, but since gh-ost uses binlog asynchronous replication, the target table will always lag behind the source table.
+![](/assets/onlineddl_cutover/ghost1.png)
+2. Next, writing to the source table needs to be stopped, and then the target table is allowed to catch up with the source's binlog, ensuring that both sides are completely synchronized.
+The naive approach is as illustrated in the following figure: first, lock the source, wait for the target to catch up with the binlog, and finally perform the rename.
+![](/assets/onlineddl_cutover/ghost2.png)
+As previously mentioned, prior to MySQL 8.0.13, it was not permitted to execute a Rename after a Lock Table, so gh-ost had to use two separate connections to execute Lock Table and Rename Table respectively.
+However, the issue is that the prerequisite for executing step 3 is acquiring the metadata lock (MDL), so step 4 needs to be executed before step 3. But once step 4 is executed, new insert/delete/update requests might be sent to the source, leading to the necessity of step 1 to perform Lock Table again... resulting in a cycle.
+Therefore, we need a mechanism that prevents any DML from being executed between the "Unlock table" and "Rename table" commands executed in sequence by the two connections.
+3. gh-ost introduces a new 'sentry' table to address this issue.
+* 3.1 Use a Lock Connection to lock both the source and the sentry tables.
+* 3.2 Then use another Rename Connection to swap the names of the source and target tables; the sentry table serves as a temporary table name for the rename operation. At this point, the Rename operation will be blocked by step 1; the target table is not locked, so it can continue to apply the binlog until it catches up with the source table.<br />
+**Note that DML operations may attempt to execute before and after step 3, but they will not be able to acquire the MDL lock and have lower priority than step 3. This is the core principle behind the correctness of gh-ost. (see code [here](https://github.com/percona/percona-server/blob/5.7/sql/mdl.h#L147))**.
+![](/assets/onlineddl_cutover/ghost3.png)
+* 3.3 At this point, the Lock Connection drops the sentry table, releasing all locks.
+* 3.4 Then the rename operation in step 3 acquires all the locks and swaps the source and target. The CutOver is complete.
+* 3.5 Finally, DML operations from steps 2 and 4 are allowed to execute.
+This can be classified as an `atomic cutover`.
+
+## Summary
+The prerequisite for CutOver is that the source and target tables are identical.
+
+For pt-osc, the source and target tables' data are always consistent, so a single rename statement can be used for CutOver directly.
+
+For facebook-osc and gh-ost, the target table is always behind the source table, so they need to stop writes to the source table first and wait for the target table to catch up with the source table before they can proceed with CutOver.
+
+From a functional perspective, pt-osc, facebook-osc (MySQL 8.0.13 and above), and gh-ost can all achieve `atomic cutover`.
